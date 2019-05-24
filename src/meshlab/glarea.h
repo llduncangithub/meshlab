@@ -317,6 +317,12 @@ public slots:
 			defdec.initMeshDecorationData(*mm, dt);
 		}
 	}
+
+	void updatePerMeshDecorators(int mesh_id)
+	{
+		update();
+	}
+
 	void updateAllDecorators();
 
 public:
@@ -518,6 +524,8 @@ public:
     QString viewToText();
     void viewFromClipboard();
     void loadShot(const QPair<Shotm, float> &) ;
+	void loadShotFromTextAlignFile(const QDomDocument &doc);
+	void loadViewFromViewStateFile(const QDomDocument &doc);
 
 private:
 
@@ -528,8 +536,7 @@ private:
     inline float clipRatioNearDefault() const { return 0.1f; }
     inline float fovDefault() const { return 60.f; }
     void initializeShot(Shotm &shot);
-    void loadShotFromTextAlignFile(const QDomDocument &doc);
-    void loadViewFromViewStateFile(const QDomDocument &doc);
+
 
 
     /*

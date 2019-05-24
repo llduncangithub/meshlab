@@ -1426,7 +1426,7 @@ from the user defined dialog
 
 void MainWindow::executeFilter(QAction *action, RichParameterSet &params, bool isPreview)
 {
-    MeshFilterInterface *iFilter = qobject_cast<MeshFilterInterface *>(action->parent());
+     MeshFilterInterface *iFilter = qobject_cast<MeshFilterInterface *>(action->parent());
     qb->show();
     iFilter->setLog(&meshDoc()->Log);
 
@@ -1441,15 +1441,7 @@ void MainWindow::executeFilter(QAction *action, RichParameterSet &params, bool i
 
     // (3) save the current filter and its parameters in the history
     if(!isPreview)
-    {
-        if (meshDoc()->filterHistory != NULL)
-        {
-            OldFilterNameParameterValuesPair* oldpair = new OldFilterNameParameterValuesPair();
-            oldpair->pair = qMakePair(action->text(),params);
-            meshDoc()->filterHistory->filtparlist.append(oldpair);
-        }
         meshDoc()->Log.ClearBookmark();
-    }
     else
         meshDoc()->Log.BackToBookmark();
     // (4) Apply the Filter
@@ -2150,11 +2142,14 @@ void MainWindow::saveProject()
     saveAllFile->setCheckState(Qt::Unchecked);
     QCheckBox* onlyVisibleLayers = new QCheckBox(QString("Only Visible Layers"),saveDiag);
     onlyVisibleLayers->setCheckState(Qt::Unchecked);
+	QCheckBox* saveViewState = new QCheckBox(QString("Save View State"), saveDiag);
+	saveViewState->setCheckState(Qt::Checked);
     QGridLayout* layout = qobject_cast<QGridLayout*>(saveDiag->layout());
     if (layout != NULL)
     {
-        layout->addWidget(saveAllFile,4,2);
-        layout->addWidget(onlyVisibleLayers,4,1);
+		layout->addWidget(onlyVisibleLayers, 4, 0);
+		layout->addWidget(saveViewState, 4, 1);
+		layout->addWidget(saveAllFile, 4, 2);
     }
     saveDiag->setAcceptMode(QFileDialog::AcceptSave);
     saveDiag->exec();
@@ -2215,13 +2210,13 @@ void MainWindow::saveProject()
     else
     {
       std::map<int, MLRenderingData> rendOpt;
-      foreach(MeshModel * mp, meshDoc()->meshList)
-      {
-        MLRenderingData ml;
-        getRenderingData(mp->id(), ml);
-        rendOpt.insert(std::pair<int, MLRenderingData>(mp->id(), ml));
-      }
-      ret = MeshDocumentToXMLFile(*meshDoc(), fileName, onlyVisibleLayers->isChecked(), QString(fi.suffix()).toLower() == "mlb", rendOpt);
+	  foreach(MeshModel * mp, meshDoc()->meshList)
+	  {
+		MLRenderingData ml;
+		getRenderingData(mp->id(), ml);
+		rendOpt.insert(std::pair<int, MLRenderingData>(mp->id(), ml));
+	  }
+	  ret = MeshDocumentToXMLFile(*meshDoc(), fileName, onlyVisibleLayers->isChecked(), saveViewState->isChecked(), QString(fi.suffix()).toLower() == "mlb", rendOpt);
     }
 
     if (saveAllFile->isChecked())
@@ -2303,6 +2298,7 @@ bool MainWindow::openProject(QString fileName)
           QMessageBox::critical(this, tr("Meshlab Opening Error"), "Unable to open MeshLab Project file");
           return false;
         }
+		GLA()->updateMeshSetVisibilities();
         for (int i=0; i<meshDoc()->meshList.size(); i++)
         {
             QString fullPath = meshDoc()->meshList[i]->fullName();
@@ -2389,11 +2385,9 @@ bool MainWindow::appendProject(QString fileName)
 
     if (fileNameList.isEmpty()) return false;
 
-    // Common Part: init a Doc if necessary, and
+    // Ccheck if we have a doc and if it is empty
     bool activeDoc = (bool) !mdiarea->subWindowList().empty() && mdiarea->currentSubWindow();
-    bool activeEmpty = activeDoc && meshDoc()->meshList.empty();
-
-    if (activeEmpty)  // it is wrong to try appending to an empty project, even if it is possible
+	if (!activeDoc || meshDoc()->meshList.empty())  // it is wrong to try appending to an empty project, even if it is possible
     {
         QMessageBox::critical(this, tr("Meshlab Opening Error"), "Current project is empty, cannot append");
         return false;
@@ -2438,14 +2432,15 @@ bool MainWindow::appendProject(QString fileName)
 
         if (QString(fi.suffix()).toLower() == "mlp" || QString(fi.suffix()).toLower() == "mlb")
         {
-			      int alreadyLoadedNum = meshDoc()->meshList.size();
+			int alreadyLoadedNum = meshDoc()->meshList.size();
             std::map<int, MLRenderingData> rendOpt;
             if (!MeshDocumentFromXML(*meshDoc(),fileName, QString(fi.suffix()).toLower() == "mlb", rendOpt))
             {
                 QMessageBox::critical(this, tr("Meshlab Opening Error"), "Unable to open MeshLab Project file");
                 return false;
             }
-      			for (int i = alreadyLoadedNum; i<meshDoc()->meshList.size(); i++)
+			GLA()->updateMeshSetVisibilities();
+			for (int i = alreadyLoadedNum; i<meshDoc()->meshList.size(); i++)
             {
                 QString fullPath = meshDoc()->meshList[i]->fullName();
                 meshDoc()->setBusy(true);
@@ -3208,13 +3203,20 @@ bool MainWindow::exportMesh(QString fileName,MeshModel* mod,const bool saveAllPo
         QTime tt; tt.start();
         ret = pCurrentIOPlugin->save(extension, fileName, *mod ,mask,savePar,QCallBack,this);
         qb->reset();
-		GLA()->Logf(GLLogStream::SYSTEM, "Saved Mesh %s in %i msec", qUtf8Printable(fileName), tt.elapsed());
-
+		if (ret)
+		{
+			GLA()->Logf(GLLogStream::SYSTEM, "Saved Mesh %s in %i msec", qUtf8Printable(fileName), tt.elapsed());
+			mod->setFileName(fileName);
+			QSettings settings;
+			int savedMeshCounter = settings.value("savedMeshCounter", 0).toInt();
+			settings.setValue("savedMeshCounter", savedMeshCounter + 1);
+		}
+		else
+		{
+			GLA()->Logf(GLLogStream::SYSTEM, "Error Saving Mesh %s", qUtf8Printable(fileName));
+			QMessageBox::critical(this, tr("Meshlab Saving Error"),  pCurrentIOPlugin->errorMessage);
+		}
         qApp->restoreOverrideCursor();
-        mod->setFileName(fileName);
-        QSettings settings;
-        int savedMeshCounter=settings.value("savedMeshCounter",0).toInt();
-        settings.setValue("savedMeshCounter",savedMeshCounter+1);
 		updateLayerDialog();
 
 		if (ret)
